@@ -1,5 +1,5 @@
-# Colorectal Cancer 5-Marker Prediction Model - Parameter Extraction and Deployment Script
-# Simplified version based on CD Score
+# Colorectal Cancer 5-Marker Prediction Model
+# CD Score-based Version
 
 # 1. Load required packages --------------------------------------------------------------
 library(tidyverse)
@@ -18,7 +18,7 @@ model_params <- list(
   intercept = coef(fit.train)[1],
   marker_weights = coef(fit.train)[-1],
   model_type = "Logistic Regression",
-  cd_threshold = coef(fit.train)[1]  # CD Score threshold = intercept
+  cd_threshold = 0.5
 )
 
 # 4. Define CD Score-based diagnostic functions -----------------------------------------------------------
@@ -32,13 +32,14 @@ model_params <- list(
 #' @return List containing CD Score and diagnostic results
 diagnose_by_cd_score <- function(cg14015706, cg20275528, cg07589773, cg19283840, cg16935295) {
   # Calculate CD Score
-  cd_score <- (cg14015706 * model_params$coefficients["cg14015706"]) +
+  cd_score <- model_params$intercept +
+    (cg14015706 * model_params$coefficients["cg14015706"]) +
     (cg20275528 * model_params$coefficients["cg20275528"]) +
     (cg07589773 * model_params$coefficients["cg07589773"]) +
     (cg19283840 * model_params$coefficients["cg19283840"]) +
     (cg16935295 * model_params$coefficients["cg16935295"])
   
-  # Direct diagnosis based on CD Score
+  # Direct diagnosis
   diagnosis <- ifelse(cd_score >= model_params$cd_threshold, "Positive", "Negative")
   risk_level <- ifelse(cd_score >= model_params$cd_threshold, "High Risk", "Low Risk")
   
@@ -46,15 +47,15 @@ diagnose_by_cd_score <- function(cg14015706, cg20275528, cg07589773, cg19283840,
     cd_score = round(cd_score, 4),
     diagnosis = diagnosis,
     risk_level = risk_level,
-    threshold = round(model_params$cd_threshold, 4)
+    threshold = model_params$cd_threshold  # Using 0.5 threshold
   ))
 }
 
 #' Simplified CD Score calculation function
 #' @param marker_values Vector of 5 marker values
 calculate_cd_score <- function(marker_values) {
-  weights <- model_params$coefficients[-1]
-  cd_score <- sum(marker_values * weights)
+  weights <- model_params$coefficients
+  cd_score <- weights[1] + sum(marker_values * weights[-1])
   
   return(round(cd_score, 4))
 }
@@ -70,9 +71,9 @@ write.csv(coefficients_df, "model_coefficients.csv", row.names = FALSE)
 
 # 5.2 Save CD Score parameters
 cd_score_params <- data.frame(
-  marker = model_params$markers,
-  weight = as.numeric(model_params$coefficients[-1]),
-  threshold = model_params$cd_threshold
+  marker = c("intercept", model_params$markers),
+  weight = as.numeric(model_params$coefficients),
+  threshold = model_params$cd_threshold  # Using 0.5 threshold
 )
 write.csv(cd_score_params, "cd_score_parameters.csv", row.names = FALSE)
 
@@ -97,6 +98,7 @@ diagnosis_script <- '
 # Created: 2024
 
 # Model coefficients and threshold
+intercept <- %.6f
 marker_weights <- c(
   cg14015706 = %.6f,
   cg20275528 = %.6f, 
@@ -104,18 +106,19 @@ marker_weights <- c(
   cg19283840 = %.6f,
   cg16935295 = %.6f
 )
-cd_threshold <- %.6f  # CD Score diagnostic threshold
+cd_threshold <- 0.5  # Diagnostic threshold set to 0.5
 
 # CD Score-based diagnostic function
 diagnose_crc <- function(cg14015706, cg20275528, cg07589773, cg19283840, cg16935295) {
-  # Calculate CD Score
-  cd_score <- (cg14015706 * marker_weights["cg14015706"]) +
+  # Calculate CD Score (including intercept)
+  cd_score <- intercept +
+    (cg14015706 * marker_weights["cg14015706"]) +
     (cg20275528 * marker_weights["cg20275528"]) +
     (cg07589773 * marker_weights["cg07589773"]) +
     (cg19283840 * marker_weights["cg19283840"]) +
     (cg16935295 * marker_weights["cg16935295"])
   
-  # Direct diagnosis based on CD Score
+  # Direct diagnosis (threshold = 0.5)
   diagnosis <- ifelse(cd_score >= cd_threshold, "Positive", "Negative")
   risk_level <- ifelse(cd_score >= cd_threshold, "High Risk", "Low Risk")
   
@@ -123,13 +126,14 @@ diagnose_crc <- function(cg14015706, cg20275528, cg07589773, cg19283840, cg16935
     cd_score = round(cd_score, 4),
     diagnosis = diagnosis,
     risk_level = risk_level,
-    threshold = round(cd_threshold, 4)
+    threshold = cd_threshold
   ))
 }
 
 # CD Score calculation only function
 calculate_cd_score <- function(cg14015706, cg20275528, cg07589773, cg19283840, cg16935295) {
-  cd_score <- (cg14015706 * marker_weights["cg14015706"]) +
+  cd_score <- intercept +
+    (cg14015706 * marker_weights["cg14015706"]) +
     (cg20275528 * marker_weights["cg20275528"]) +
     (cg07589773 * marker_weights["cg07589773"]) +
     (cg19283840 * marker_weights["cg19283840"]) +
@@ -155,12 +159,12 @@ batch_diagnose <- function(marker_matrix) {
 # Format script
 formatted_script <- sprintf(
   diagnosis_script,
+  model_params$coefficients["(Intercept)"],
   model_params$coefficients["cg14015706"],
   model_params$coefficients["cg20275528"], 
   model_params$coefficients["cg07589773"],
   model_params$coefficients["cg19283840"],
-  model_params$coefficients["cg16935295"],
-  model_params$cd_threshold
+  model_params$coefficients["cg16935295"]
 )
 
 writeLines(formatted_script, "crc_diagnosis_by_cd_score.R")
@@ -175,7 +179,8 @@ cat("=== CD Score-based Diagnostic Model Parameter Summary ===\n")
 cat("Model Name:", model_params$model_name, "\n")
 cat("Version:", model_params$version, "\n") 
 cat("Markers:", paste(model_params$markers, collapse = ", "), "\n")
-cat("CD Score Diagnostic Threshold:", round(model_params$cd_threshold, 6), "\n")
+cat("Intercept:", round(model_params$intercept, 6), "\n")
+cat("CD Score Diagnostic Threshold:", model_params$cd_threshold, "\n")
 cat("Marker Weights:\n")
 for(i in 2:length(model_params$coefficients)) {
   cat("  ", names(model_params$coefficients)[i], ":", round(model_params$coefficients[i], 6), "\n")
@@ -201,8 +206,8 @@ cat("Diagnosis Result:", example_result$diagnosis, "\n")
 cat("Risk Level:", example_result$risk_level, "\n")
 
 # Explain diagnostic logic
-cat("\nDiagnostic Logic: CD Score >=", example_result$threshold, "→ Positive (High Risk)\n")
-cat("                  CD Score <", example_result$threshold, "→ Negative (Low Risk)\n")
+cat("\nDiagnostic Logic: CD Score >= 0.5 → Positive (High Risk)\n")
+cat("                  CD Score < 0.5 → Negative (Low Risk)\n")
 
 # 7. Generate documentation ---------------------------------------------------------------
 
@@ -212,22 +217,25 @@ documentation <- '
 ## Model Overview
 This model uses the CD Score of 5 methylation markers to directly assess colorectal cancer risk, without calculating probability values.
 
-## Diagnostic Rules
-- **CD Score ≥ Threshold**: Positive (High Risk)
-- **CD Score < Threshold**: Negative (Low Risk)
+## CD Score Calculation
+CD Score = Intercept + (Marker1 × Weight1) + (Marker2 × Weight2) + (Marker3 × Weight3) + (Marker4 × Weight4) + (Marker5 × Weight5)
 
-## Threshold Calculation
-Diagnostic Threshold = Model Intercept
+## Diagnostic Rules
+- **CD Score ≥ 0.5**: Positive (High Risk)
+- **CD Score < 0.5**: Negative (Low Risk)
+
+## Threshold Explanation
+The diagnostic threshold is set to 0.5, an empirical value that can be adjusted based on clinical needs.
 
 ## Model Files
-- `model_coefficients.csv`: Complete model coefficients
+- `model_coefficients.csv`: Complete model coefficients (including intercept)
 - `cd_score_parameters.csv`: CD Score calculation weights and threshold
 - `model_metadata.csv`: Model metadata
 - `crc_diagnosis_by_cd_score.R`: Diagnostic algorithm script
 - `model_parameters.json`: JSON format parameters
 
 ## Usage Instructions
-See the diagnostic algorithm script for function details and usage examples.
+See the diagnostic algorithm script for detailed function descriptions and usage examples.
 '
 
 writeLines(documentation, "README.md")
@@ -236,7 +244,7 @@ writeLines(documentation, "README.md")
 
 cat("\n=== CD Score-based Diagnostic Model Files Generation Completed ===\n")
 cat("Generated the following files:\n")
-cat("1. model_coefficients.csv - Model coefficients\n")
+cat("1. model_coefficients.csv - Model coefficients (including intercept)\n")
 cat("2. cd_score_parameters.csv - CD Score parameters and threshold\n")
 cat("3. model_metadata.csv - Model metadata\n")
 cat("4. crc_diagnosis_by_cd_score.R - Diagnostic algorithm script\n")
